@@ -1,4 +1,4 @@
-name: Deploy WordPress
+name: Deploy WordPress Site
 
 on:
   push:
@@ -12,24 +12,29 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Deploy via SCP
+      - name: Copy Files to VM
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.VM_IP }}
-          username: ${{ secrets.VM_USER }}
+          username: ${{ secrets.VM_USERNAME }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           source: "."
           target: "/var/www/html"
-          # DO NOT use rm: true for WordPress, or you'll delete user-uploaded images!
+          # IMPORTANT: Leave rm: false for WordPress 
+          # so you don't delete user-uploaded images!
           rm: false 
 
-      - name: Set Permissions
+      - name: Fix Permissions & Restart PHP
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.VM_IP }}
           username: ${{ secrets.VM_USERNAME }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
+            # Set owner to Nginx user
             sudo chown -R www-data:www-data /var/www/html
+            # Set directory and file permissions
             sudo find /var/www/html -type d -exec chmod 755 {} \;
             sudo find /var/www/html -type f -exec chmod 644 {} \;
+            # Reload Nginx to catch any config changes
+            sudo systemctl reload nginx
