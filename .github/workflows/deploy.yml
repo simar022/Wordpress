@@ -1,4 +1,4 @@
-name: Deploy WordPress Site
+name: Deploy WordPress to Azure VM
 
 on:
   push:
@@ -8,33 +8,36 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Copy Files to VM
+      - name: Copy Files via SCP
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.VM_IP }}
-          username: ${{ secrets.VM_USERNAME }}
+          # Ensure this secret is set to: simar022netsmartz
+          username: ${{ secrets.VM_USER }} 
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           source: "."
           target: "/var/www/html"
-          # IMPORTANT: Leave rm: false for WordPress 
-          # so you don't delete user-uploaded images!
-          rm: false 
+          # 'rm: false' is critical for WordPress so you don't lose uploads
+          rm: false
+          strip_components: 0
+          debug: true
 
-      - name: Fix Permissions & Restart PHP
+      - name: Fix Permissions and Reload Nginx
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.VM_IP }}
-          username: ${{ secrets.VM_USERNAME }}
+          username: ${{ secrets.VM_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            # Set owner to Nginx user
+            # Set the web server (www-data) as the owner of the files
             sudo chown -R www-data:www-data /var/www/html
-            # Set directory and file permissions
+            # Set correct directory and file permissions for WordPress
             sudo find /var/www/html -type d -exec chmod 755 {} \;
             sudo find /var/www/html -type f -exec chmod 644 {} \;
-            # Reload Nginx to catch any config changes
+            # Reload Nginx to apply any changes
             sudo systemctl reload nginx
