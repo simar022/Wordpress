@@ -18,7 +18,7 @@ jobs:
         with:
           host: ${{ secrets.VM_IP }}
           # Ensure this secret is set to: simar022netsmartz
-          username: ${{ secrets.VM_USER }} 
+          username: ${{ secrets.VM_USERNAME }} 
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           source: "."
           target: "/var/www/html"
@@ -31,7 +31,7 @@ jobs:
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.VM_IP }}
-          username: ${{ secrets.VM_USER }}
+          username: ${{ secrets.VM_USERNAME }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             # Set the web server (www-data) as the owner of the files
