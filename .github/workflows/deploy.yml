@@ -1,49 +1,111 @@
-name: Deploy WordPress to Azure
+# name: Deploy WordPress to Azure
+
+# on:
+#   push:
+#     branches:
+#       - main
+
+# jobs:
+#   deploy:
+#     runs-on: ubuntu-latest
+#     steps:
+#       - name: Checkout Code
+#         uses: actions/checkout@v4
+
+#       - name: Upload to Landing Zone
+#         uses: appleboy/scp-action@master
+#         with:
+#           host: ${{ secrets.VM_IP}}
+#           username: ${{ secrets.VM_USERNAME }}
+#           key: ${{ secrets.SSH_PRIVATE_KEY }}
+#           # Source "." ensures we grab everything in the repo root
+#           source: "."
+#           # Target is your user's home folder (no permission issues here)
+#           target: "/home/${{ secrets.VM_USERNAME }}/wordpress_staging"
+#           rm: true
+
+#       - name: Move to Production & Fix Permissions
+#         uses: appleboy/ssh-action@master
+#         with:
+#           host: ${{ secrets.VM_IP }}
+#           username: ${{ secrets.VM_USERNAME }}
+#           key: ${{ secrets.SSH_PRIVATE_KEY }}
+#           script: |
+            
+#             sudo mkdir -p /var/www/html
+
+#             sudo cp -ra /home/${{ secrets.VM_USERNAME }}/wordpress_staging/. /var/www/html/
+
+#             sudo rm -rf /var/www/html/.git
+#             sudo rm -rf /var/www/html/.github
+
+#             sudo chown -R www-data:www-data /var/www/html
+
+#             sudo find /var/www/html -type d -exec chmod 755 {} \;
+#             sudo find /var/www/html -type f -exec chmod 644 {} \;
+
+#             sudo systemctl reload nginx
+            
+#             rm -rf /home/${{ secrets.VM_USERNAME }}/wordpress_staging
+
+name: Dockerize and Deploy
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  deploy:
+  build-and-push:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     steps:
-      - name: Checkout Code
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Upload to Landing Zone
-        uses: appleboy/scp-action@master
+      - name: Log in to Registry
+        uses: docker/login-action@v3
         with:
-          host: ${{ secrets.VM_IP}}
-          username: ${{ secrets.VM_USERNAME }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          # Source "." ensures we grab everything in the repo root
-          source: "."
-          # Target is your user's home folder (no permission issues here)
-          target: "/home/${{ secrets.VM_USERNAME }}/wordpress_staging"
-          rm: true
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Move to Production & Fix Permissions
+      - name: Build and Push Docker Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to Azure VM via SSH
         uses: appleboy/ssh-action@master
         with:
           host: ${{ secrets.VM_IP }}
           username: ${{ secrets.VM_USERNAME }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
+            # Log in to GitHub Packages on the VM
+            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
             
-            sudo mkdir -p /var/www/html
-
-            sudo cp -ra /home/${{ secrets.VM_USERNAME }}/wordpress_staging/. /var/www/html/
-
-            sudo rm -rf /var/www/html/.git
-            sudo rm -rf /var/www/html/.github
-
-            sudo chown -R www-data:www-data /var/www/html
-
-            sudo find /var/www/html -type d -exec chmod 755 {} \;
-            sudo find /var/www/html -type f -exec chmod 644 {} \;
-
-            sudo systemctl reload nginx
+            # Stop the old container
+            docker stop wordpress-site || true
+            docker rm wordpress-site || true
             
-            rm -rf /home/${{ secrets.VM_USERNAME }}/wordpress_staging
+            # Pull the latest image
+            docker pull ghcr.io/${{ env.IMAGE_NAME }}:latest
+            
+            # Run the new container
+            docker run -d \
+              --name wordpress-site \
+              -p 80:80 \
+              --restart always \
+              ghcr.io/${{ env.IMAGE_NAME }}:latest
