@@ -93,19 +93,15 @@ jobs:
           username: ${{ secrets.VM_USERNAME }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            # Log in to GitHub Packages on the VM
-            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+            echo "${{ secrets.GITHUB_TOKEN }}" | sudo docker login ghcr.io -u ${{ github.actor }} --password-stdin
             
-            # Stop the old container
-            docker stop wordpress-site || true
-            docker rm wordpress-site || true
+            sudo docker stop wordpress-site || true
+            sudo docker rm wordpress-site || true
             
-            # Pull the latest image
-            docker pull ghcr.io/${{ env.IMAGE_NAME }}:latest
+            sudo docker pull ghcr.io/${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
             
-            # Run the new container
-            docker run -d \
+            sudo docker run -d \
               --name wordpress-site \
               -p 80:80 \
               --restart always \
-              ghcr.io/${{ env.IMAGE_NAME }}:latest
+              ghcr.io/${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
