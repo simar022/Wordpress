@@ -74,3 +74,8 @@ h1, h2, h3, h4, h5, h6, blockquote, caption, figcaption, p {
 :where(pre) {
 	overflow-x: auto;
 }
+/* Test Change */
+body {
+    border: 10px solid #3498db;
+    background-color: #f0f8ff !important;
+}
