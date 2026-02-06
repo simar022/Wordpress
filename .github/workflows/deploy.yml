@@ -154,13 +154,11 @@ jobs:
           username: ${{ secrets.VM_USERNAME }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            # 1. Login
+            
             echo "${{ secrets.GITHUB_TOKEN }}" | sudo docker login ghcr.io -u ${{ github.actor }} --password-stdin
             
-            # 2. Pull the SPECIFIC versioned image
             sudo docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
             
-            # 3. Start the NEW container on a temporary name
             sudo docker run -d \
             --name wordpress-site \
             -p 80:80 \
@@ -168,21 +166,15 @@ jobs:
             --restart always \
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
             
-            # 4. (Optional) Wait for health check here
             sleep 5 
 
-            # 5. Atomic Switch: Remove old, Rename new
             sudo docker stop wordpress-site || true
             sudo docker rm wordpress-site || true
             sudo docker rename wordpress-new wordpress-site
             
-            # 6. Rebind the port (If not using a Load Balancer)
-            # Since we can't easily rebind ports without a restart, 
-            # we do a quick swap:
             sudo docker stop wordpress-site
             sudo docker run -d --name wordpress-prod -p 80:80 --restart always ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
             sudo docker rm wordpress-site
             sudo docker rename wordpress-prod wordpress-site
 
-            # 7. Cleanup old images to save disk space
             sudo docker image prune -f
