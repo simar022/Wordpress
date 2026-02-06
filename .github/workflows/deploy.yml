@@ -138,7 +138,6 @@ jobs:
         with:
           context: .
           push: true
-          # We tag with BOTH 'latest' and the unique 'SHA'
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
