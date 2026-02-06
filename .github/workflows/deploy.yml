@@ -9,18 +9,22 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
-      - name: Deploy to Server
+      - name: Upload to Landing Zone
         uses: appleboy/scp-action@master
         with:
-          host: ${{ secrets.VM_IP }}
+          host: ${{ secrets.VM_IP}}
           username: ${{ secrets.VM_USERNAME }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: "./*, !.git, !.github"
-          target: "/home/${{ secrets.VM_USERNAME }}/deploy_tmp" # Land files in a temp home folder first
+          # Source "." ensures we grab everything in the repo root
+          source: "."
+          # Target is your user's home folder (no permission issues here)
+          target: "/home/${{ secrets.VM_USERNAME }}/wordpress_staging"
           rm: true
 
-      - name: Move Files with Sudo and Reload
+      - name: Move to Production & Fix Permissions
         uses: appleboy/ssh-action@master
         with:
           host: ${{ secrets.VM_IP }}
@@ -28,37 +32,18 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             
-            sudo cp -r /home/${{ secrets.VM_USERNAME }}/deploy_tmp/. /var/www/html/
-            
-            rm -rf /home/${{ secrets.VM_USERNAME }}/deploy_tmp
-            
+            sudo mkdir -p /var/www/html
+
+            sudo cp -ra /home/${{ secrets.VM_USERNAME }}/wordpress_staging/. /var/www/html/
+
+            sudo rm -rf /var/www/html/.git
+            sudo rm -rf /var/www/html/.github
+
             sudo chown -R www-data:www-data /var/www/html
-            sudo find /var/www/html -type d -exec chmod 775 {} \;
-            sudo find /var/www/html -type f -exec chmod 664 {} \;
-            
+
+            sudo find /var/www/html -type d -exec chmod 755 {} \;
+            sudo find /var/www/html -type f -exec chmod 644 {} \;
+
             sudo systemctl reload nginx
-
-      # - name: Checkout Code
-      #   uses: actions/checkout@v4
-
-      # - name: Deploy to Server via SSH
-      #   uses: appleboy/scp-action@master
-      #   with:
-      #     host: ${{ secrets.VM_IP }}
-      #     username: ${{ secrets.VM_USERNAME }}
-      #     key: ${{ secrets.SSH_PRIVATE_KEY }}
-      #     # source: "."
-      #     source: "./*, !.git, !.github"
-      #     target: "/var/www/html"
-      #     strip_components: 0
-
-      # - name: Post-Deployment Commands
-      #   uses: appleboy/ssh-action@master
-      #   with:
-      #     host: ${{ secrets.VM_IP }}
-      #     username: ${{ secrets.VM_USERNAME }}
-      #     key: ${{ secrets.SSH_PRIVATE_KEY }}
-      #     script: |
-      #       sudo chown -R www-data:www-data /var/www/html
-      #       sudo chmod -R 755 /var/www/html
-      #       sudo systemctl reload nginx
+            
+            rm -rf /home/${{ secrets.VM_USERNAME }}/wordpress_staging
