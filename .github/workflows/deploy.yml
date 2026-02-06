@@ -48,7 +48,65 @@
             
 #             rm -rf /home/${{ secrets.VM_USERNAME }}/wordpress_staging
 
-name: Dockerize and Deploy
+# name: Dockerize and Deploy
+
+# on:
+#   push:
+#     branches: [ main ]
+
+# env:
+#   REGISTRY: ghcr.io
+#   IMAGE_NAME: ${{ github.repository }}
+
+# jobs:
+#   build-and-push:
+#     runs-on: ubuntu-latest
+#     permissions:
+#       contents: read
+#       packages: write
+#     steps:
+#       - name: Checkout code
+#         uses: actions/checkout@v4
+
+#       - name: Log in to Registry
+#         uses: docker/login-action@v3
+#         with:
+#           registry: ${{ env.REGISTRY }}
+#           username: ${{ github.actor }}
+#           password: ${{ secrets.GITHUB_TOKEN }}
+
+#       - name: Build and Push Docker Image
+#         uses: docker/build-push-action@v5
+#         with:
+#           context: .
+#           push: true
+#           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+
+#   deploy:
+#     needs: build-and-push
+#     runs-on: ubuntu-latest
+#     steps:
+#       - name: Deploy to Azure VM via SSH
+#         uses: appleboy/ssh-action@master
+#         with:
+#           host: ${{ secrets.VM_IP }}
+#           username: ${{ secrets.VM_USERNAME }}
+#           key: ${{ secrets.SSH_PRIVATE_KEY }}
+#           script: |
+#             echo "${{ secrets.GITHUB_TOKEN }}" | sudo docker login ghcr.io -u ${{ github.actor }} --password-stdin
+            
+#             sudo docker stop wordpress-site || true
+#             sudo docker rm wordpress-site || true
+            
+#             sudo docker pull ghcr.io/${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+            
+#             sudo docker run -d \
+#               --name wordpress-site \
+#               -p 80:80 \
+#               --restart always \
+#               ghcr.io/${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+
+name: Professional Docker Deploy
 
 on:
   push:
@@ -75,33 +133,56 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and Push Docker Image
+      - name: Build and Push
         uses: docker/build-push-action@v5
         with:
           context: .
           push: true
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          # We tag with BOTH 'latest' and the unique 'SHA'
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
 
   deploy:
     needs: build-and-push
     runs-on: ubuntu-latest
     steps:
-      - name: Deploy to Azure VM via SSH
+      - name: Deploy via SSH
         uses: appleboy/ssh-action@master
         with:
-          host: ${{ secrets.VM_IP }}
+          host: ${{ secrets.VM_IP}}
           username: ${{ secrets.VM_USERNAME }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
+            # 1. Login
             echo "${{ secrets.GITHUB_TOKEN }}" | sudo docker login ghcr.io -u ${{ github.actor }} --password-stdin
             
+            # 2. Pull the SPECIFIC versioned image
+            sudo docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+            
+            # 3. Start the NEW container on a temporary name
+            sudo docker run -d \
+            --name wordpress-site \
+            -p 80:80 \
+            -v /home/azureuser/wp-data/uploads:/var/www/html/wp-content/uploads \
+            --restart always \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+            
+            # 4. (Optional) Wait for health check here
+            sleep 5 
+
+            # 5. Atomic Switch: Remove old, Rename new
             sudo docker stop wordpress-site || true
             sudo docker rm wordpress-site || true
+            sudo docker rename wordpress-new wordpress-site
             
-            sudo docker pull ghcr.io/${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-            
-            sudo docker run -d \
-              --name wordpress-site \
-              -p 80:80 \
-              --restart always \
-              ghcr.io/${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+            # 6. Rebind the port (If not using a Load Balancer)
+            # Since we can't easily rebind ports without a restart, 
+            # we do a quick swap:
+            sudo docker stop wordpress-site
+            sudo docker run -d --name wordpress-prod -p 80:80 --restart always ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+            sudo docker rm wordpress-site
+            sudo docker rename wordpress-prod wordpress-site
+
+            # 7. Cleanup old images to save disk space
+            sudo docker image prune -f
